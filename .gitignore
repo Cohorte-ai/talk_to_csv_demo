@@ -1,0 +1,7 @@
+chroma_*
+chroma
+.DS_Store
+.env
+venv
+data/extracted_imgs
+prompt_eg
