@@ -1,6 +1,7 @@
 import base64
 import streamlit as st
 import streamlit.components.v1 as components
+import openai
 
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from langchain_openai import ChatOpenAI
@@ -11,7 +12,8 @@ from dotenv import load_dotenv
 # Load variables from .env file
 load_dotenv()
 
-llm = ChatOpenAI(model_name="gpt-4", temperature=0)
+llm_gpt4 = ChatOpenAI(model_name="gpt-4", temperature=0)
+llm_gpt35 = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
 APP_TITLE = "Talk to Tabular Data"
 SVG_ICON_PATH = 'resources/static/cohorte_logo_content.svg'
@@ -54,13 +56,29 @@ def main():
             st.write("DataFrame (upto 40 rows):")
             st.write(df.head(40))
 
-    # User input for query text
-    query_text = st.text_area("Enter your query:", height=50)
+    if df is not None and df.shape[0] > 0:
+        df_sample = df.head(1)
+        # Summarize the DataFrame content into a prompt
+        summary_prompt = "Based on the data: " + ", ".join(
+            [f"{col} includes {df_sample[col].unique().tolist()}" for col in df_sample.columns])
+
+        # Append a request for generating questions
+        suggested_ques_prompt = (f"Given the information that {summary_prompt}, "
+                                 f"what are three relevant questions one might ask about this data?"
+                                 f"Don't end the answer prematurely. give bulleted list.")
+
+        # Make a call to OpenAI API to generate questions
+        res = llm_gpt35.predict(suggested_ques_prompt)
+        # breakpoint()
+        # Print the generated questions
+        st.write(f"possible questions to ask:\n{res}")
+        # User input for query text
+        query_text = st.text_area("Enter your query:", height=50)
 
     if st.button("Submit"):
         with st.spinner("Invoking Agent:"):
             assert df.shape[0] > 0
-            agent_executor = create_pandas_dataframe_agent(llm, df, verbose=True, handle_parsing_errors=True)
+            agent_executor = create_pandas_dataframe_agent(llm_gpt4, df, verbose=True, handle_parsing_errors=True)
             prompt_text = f"""
                 Begin by immediately importing all necessary libraries, as this is a mandatory first step to ensure that all required functionalities are available. 
                 Failure to import necessary libraries first may result in incomplete or erroneous task execution.
@@ -82,6 +100,8 @@ def main():
                 It needs to be RFC8259 compliant JSON. 
                 This format is mandatory and required for successful data processing.
                 
+                Final Answer should also have key `explanations` containing all thought, action and action input of ReAct framework. 
+                
                 Query:
                 {query_text}
             """
@@ -91,12 +111,10 @@ def main():
                 # include_run_info=True,
                 # return_only_outputs=False
             )
-
-            print(f"response:\n{type(response)}\n{response}")
+            # breakpoint()
             if isinstance(response["output"], str):
                 try:
                     ans = response["output"]
-                    print(f"ans: {ans}")
                     from ast import literal_eval
                     response["output"] = literal_eval(ans.strip())
                 except Exception as e:
@@ -105,21 +123,31 @@ def main():
             output_result = response["output"]
 
             if isinstance(output_result, dict):
-                # st.write(f"output_result is json: {type(output_result)}")
-                # st.write(output_result)
-                # st.write(output_result.keys())
-
                 print(f"output_result:\n{type(output_result)}\n{output_result}")
-                st.write(output_result["output_text"])
-                if "fig_html" in output_result:
-                    print(f"fig_html path: {output_result['fig_html']}")
-
-                    components.html(
-                        open(output_result["fig_html"],  'r', encoding='utf-8', ).read(),
-                        height=550,
-                        scrolling=True
-                    )
-
+                if "output_text" in output_result:
+                    st.write(output_result["output_text"])
+                if (
+                        "fig_html" in output_result
+                        and
+                        (
+                                not output_result["fig_html"]
+                                or
+                                not str(output_result["fig_html"]).strip().lower() == "none"
+                        )
+                ):
+                        print(f"fig_html path: {output_result['fig_html']}")
+                        components.html(
+                            open(output_result["fig_html"],  'r', encoding='utf-8', ).read(),
+                            height=550,
+                            scrolling=True
+                        )
+                if (
+                        "explanations" in output_result
+                        and
+                        len(str(output_result["explanations"])) > 1
+                ):
+                    with st.expander("See explanation"):
+                        st.write(output_result["explanations"])
             else:
                 st.write(output_result)
             print("Done!!!")
