@@ -32,6 +32,17 @@ combined_html_title = f"""
 </div>
 """
 
+# Inject custom CSS to set the width of the sidebar
+st.markdown(
+    """
+    <style>
+        section[data-testid="stSidebar"] {
+            width: 50% !important; # Set the width to your desired value
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 def load_css(file_name):
     with open(file_name) as css:
@@ -43,18 +54,18 @@ def main():
 
     # Display the combined SVG and Title
     st.markdown(combined_html_title, unsafe_allow_html=True)
+    with st.sidebar:
+        # File uploader widget
+        uploaded_file = st.file_uploader("Choose a CSV file")
 
-    # File uploader widget
-    uploaded_file = st.file_uploader("Choose a CSV file")
-
-    df = None
-    if uploaded_file is not None:
-        # To read file as CSV (if applicable):
-        if uploaded_file.type == "text/csv":
-            import pandas as pd
-            df = pd.read_csv(uploaded_file)
-            st.write("DataFrame (upto 40 rows):")
-            st.write(df.head(40))
+        df = None
+        if uploaded_file is not None:
+            # To read file as CSV (if applicable):
+            if uploaded_file.type == "text/csv":
+                import pandas as pd
+                df = pd.read_csv(uploaded_file)
+                st.write("DataFrame (upto 40 rows):")
+                st.write(df.head(40))
 
     if df is not None and df.shape[0] > 0:
         df_sample = df.head(1)
@@ -75,7 +86,7 @@ def main():
         # User input for query text
         query_text = st.text_area("Enter your query:", height=50)
 
-    if st.button("Submit"):
+    if df is not None and df.shape[0] > 0 and st.button("Submit"):
         with st.spinner("Invoking Agent:"):
             assert df.shape[0] > 0
             agent_executor = create_pandas_dataframe_agent(llm_gpt4, df, verbose=True, handle_parsing_errors=True)
